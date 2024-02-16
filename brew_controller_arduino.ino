@@ -120,10 +120,14 @@ void print_ser(String messg);
 
 // button comands
 bool pressed(int butt);
-int getValue(String strVarName, String unity, int minValue, int maxValue );
+//int getValue(String strVarName, String unity, int minValue, int maxValue );
+float getValue(String strVarName, String unity, float value_, float incr_, int minValue, int maxValue);
 int getButtValue(int butt, int value, int incr);
 bool getOk();
 String menuSelect(String menu[], int menuSize);
+void setPanelaOnOff(float tempNowCheck, int rampNowCheck);
+int revOrFwd(int rampNow_old);
+void read_res_power();
 
 // sys functions
 float readTemp();
@@ -382,11 +386,12 @@ void loop() {
     } while(!pressed(buttOk));
     
     backHigh = !backHigh;
-    if(backHigh) {
-      lcd.setBacklight(HIGH);
-    } else {
-      lcd.setBacklight(LOW);
-    }
+    // Todo - not working
+    //if(backHigh) {
+    //  lcd.setBacklight(HIGH);
+    //} else {
+    //lcd.setBacklight(LOW);
+    //}
 
     programPhase = "*";
   
@@ -500,10 +505,10 @@ bool pressed(int butt) {
      return butt == buttCancel;
      
   } else if ((valButtons < 400) && (valButtons >= 200)) { // UP
-     return butt == buttAdd;
+     return butt == buttSub;
      
   } else if ((valButtons < 200) && (valButtons >= 60)) { // DOWN
-     return butt == buttSub;
+     return butt == buttAdd;
      
 //  } else if  (valButtons < 60) { // RIGHT
 //     estadoBotao(btRIGHT);
