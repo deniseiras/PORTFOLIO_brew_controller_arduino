@@ -1,63 +1,73 @@
 /*
-Projeto Controlador de Temperatura de Resistência e de Tempo de Brassagem 
+Project for Brew control (temperature, ramp time)
 
-v1.0.0 - Usa LCD, sensor de temperatura e botoes
+v1.1.0 - Keypad LCD shield and temperature sensor
 
 Autor: Denis Magalhães de Almeida Eiras
 e-mail: denis.eiras@gmail.com
 
+History
+- 1.0.0 - First version with buttons, LCD and temperature sensor
+- 1.1.0 - this version
+
+References:
+https://www.youtube.com/watch?v=QsGPJMFbA50
+https://www.youtube.com/watch?v=YUITi1nGLyc
+
 TODO 
 
-1 - adicao insumos - implementar
-2 - excluir rampa - corrigir
-3 - salvar rampa eprom - implementar
+- create recipes 
+- alert for putting the ingredients
+- exclude ramp
+- save status to eprom in case of energy fail
 
-
-================= Wire Config ========================
-
-potenciometro
-A3 - ....
-
-cristal liq:
-A4 - verde - sda
-A5 - amarelo - scl
-
-rele panela
-D3 - laranja
-
-rele bomba
-D7 - azul
-
-D8  - botao cancel
-D9  - botao ok
-D10 - botao sub
-D11 - botao add
-
-sens. temp
-D12 - amarelo
 
 */
 
+
+
+//================= Libraries ========================
+
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <LiquidCrystal.h>
+
+
+//================= Port / Wire Config ========================
+
+// A0 - output - All buttons of keypad shield
+// D4-09 - used by the Keypad Shield
+
+// temperature sensor DS18B20 - yellow wire
+#define TEMP_SENSOR 13
+
+// RESISTANCE_PORT - orange wire
+#define RESISTANCE_PORT 2
+
+// PUMP_PORT - blue wire - NOT USED YET
+//#define PUMP_PORT 1
 
 
 // ================== System variables ==================
+
 #define LCD_OUT 0
 #define SERIAL_OUT 1
 #define SYSTEM_OUT 0
 
-// analog ports
-//#define potentiometer_port ???
+#define pinButtons A0
 
-// digital ports
-#define panela_port 3
-#define pump_port 7
 #define buttCancel 8       //Botão para cancelar
 #define buttOk 9           //Botão para confirmar
 #define buttSub 10         //Botão para subtrair valor
 #define buttAdd 11         //Botão para somar valor
 
+#define pinRs 8
+#define pinEn 9
+#define pinD4 4
+#define pinD5 5
+#define pinD6 6
+#define pinD7 7
+#define pinBackLight 10
 
 // system parameters
 float tempOffsetOn = -0.5;
@@ -67,6 +77,7 @@ float resistance_power_max = 1.0;  // porcentagem da potencia maxima da resisten
 float resistance_inteval_seconds = 60;
 bool backHigh = true;
 
+// variables definition
 String lcd_serial[2];
 String programPhase; // fase: configurar, brassagem .. etc
 int rampLast = 0;    // ultima rampa incluida + 1
@@ -83,29 +94,21 @@ int secondsRamp;
 int secondsInitRamp;
 int secondsPrint, minutesPrint, hoursPrint;
 float resistance_power = 0.8;
-float resistance_power_now = 0;
+float resistance_power_now = LOW;
 float resistance_on_seconds;
 float resistance_init_seconds;
 
 
-// =================== Sensors cfg =====================
-// *** Crystal Liq. ***
-#include <LiquidCrystal_I2C.h>
-// initialize the library with the numbers of the interface pins
-//LiquidCrystal_I2C lcd(0x3F,2,1,0,4,5,6,7,3, POSITIVE);
-LiquidCrystal_I2C lcd(0x27,2,1,0,4,5,6,7,3, POSITIVE);
+// =================== Devices initialization =====================
 
-// *** SENSOR ***
-// Porta do pino de sinal do DS18B20
-#define ONE_WIRE_BUS 12
-
-// Define uma instancia do oneWire para comunicacao com o sensor
-OneWire oneWire(ONE_WIRE_BUS);
+OneWire oneWire(TEMP_SENSOR);
 DallasTemperature sensors(&oneWire);
 DeviceAddress sensor1;
+LiquidCrystal lcd(pinRs, pinEn, pinD4, pinD5, pinD6, pinD7);
 
 
-// =================== Define API ======================
+// =================== API ======================
+
 // printing
 void cls();
 void cls_line(byte lin);
@@ -118,33 +121,38 @@ void print_ser(String messg);
 
 // button comands
 bool pressed(int butt);
-int getValue(String strVarName, String unity, int minValue, int maxValue );
+//int getValue(String strVarName, String unity, int minValue, int maxValue );
+float getValue(String strVarName, String unity, float value_, float incr_, int minValue, int maxValue);
 int getButtValue(int butt, int value, int incr);
 bool getOk();
 String menuSelect(String menu[], int menuSize);
+void setPanelaOnOff(float tempNowCheck, int rampNowCheck);
+int revOrFwd(int rampNow_old);
+void read_res_power();
 
 // sys functions
 float readTemp();
 
 
 // ===================== Setup ========================
+
 void setup() { 
   Serial.begin(9600);
   programPhase = '*';
   lcd_serial[0] = "";
   lcd_serial[1] = "";
 
-  pinMode(pump_port, OUTPUT);
-  digitalWrite(pump_port, HIGH); //Desliga bomba
+//  pinMode(PUMP_PORT, OUTPUT);
+//  digitalWrite(PUMP_PORT, HIGH); //Desliga bomba
   
-  pinMode(panela_port, OUTPUT);
-  analogWrite(panela_port, 0); //Desliga rele
+  pinMode(RESISTANCE_PORT, OUTPUT);
+  digitalWrite(RESISTANCE_PORT, LOW); //Desliga rele
 
- 
   // set up the LCD's number of columns and rows:
   lcd.begin(16, 2);
-//  void setBacklightPin ( uint8_t value, t_backlighPol pol );
-  lcd.setBacklight(HIGH);
+  pinMode(pinBackLight, OUTPUT);
+  digitalWrite(pinBackLight, HIGH);
+  
   sensors.begin();
   if (!sensors.getAddress(sensor1, 0)) 
      Serial.println("Sensores nao encontrados !"); 
@@ -253,9 +261,9 @@ void loop() {
             dtostrf(tempNow, 2, 1, tempChar);
             dtostrf(rampTemp[rampNow], 2, 0, tempChar2);
             dtostrf(resistance_power * 100, 2, 0, tempChar3);
-            tempChar4 = resistance_power_now == 0 ? ' ' : '*';
+            tempChar4 = resistance_power_now == LOW ? ' ' : '*';
            
-//            if (resistance_power_now==0) {
+//            if (resistance_power_now==LOW) {
 //              tempChar4 = '*';
 //            } else {
 //              tempChar4 = ' ';
@@ -288,7 +296,7 @@ void loop() {
             dtostrf(tempNow, 2, 1, tempChar);
             dtostrf(rampTemp[rampNow], 2, 0, tempChar2);
             dtostrf(resistance_power * 100, 2, 0, tempChar3);
-            tempChar4 = resistance_power_now == 0 ? ' ' : '*';
+            tempChar4 = resistance_power_now == LOW ? ' ' : '*';
  
             print_out("Ok fervura?" + String(rampNow), 0); 
 
@@ -317,7 +325,7 @@ void loop() {
           setPanelaOnOff(tempNow, rampNow);
           dtostrf(tempNow, 2, 1, tempChar);
           dtostrf(resistance_power * 100, 2, 0, tempChar3);
-          tempChar4 = resistance_power_now == 0 ? ' ' : '*';
+          tempChar4 = resistance_power_now == LOW ? ' ' : '*';
 
           secondsRamp = (int) ((float) millis() / 1000.0) - secondsInitRamp;
           hoursPrint = (int) ((float) secondsRamp / 3600.0);
@@ -350,7 +358,7 @@ void loop() {
         print_del("Tempo atingido!", 1);
         rampNow++;
       }
-      analogWrite(panela_port, 0);  //DesLiga rele
+      digitalWrite(RESISTANCE_PORT, LOW);  //DesLiga rele
     }
     programPhase = "*";
 
@@ -379,11 +387,12 @@ void loop() {
     } while(!pressed(buttOk));
     
     backHigh = !backHigh;
-    if(backHigh) {
-      lcd.setBacklight(HIGH);
-    } else {
-      lcd.setBacklight(LOW);
-    }
+    // Todo - not working
+    //if(backHigh) {
+    //  lcd.setBacklight(HIGH);
+    //} else {
+    //lcd.setBacklight(LOW);
+    //}
 
     programPhase = "*";
   
@@ -414,12 +423,12 @@ void read_res_power() {
 
 void setPanelaOnOff(float tempNowCheck, int rampNowCheck) {
 
-//  if(tempNowCheck > rampTemp[rampNowCheck] && digitalRead(panela_port) == LOW) {
+//  if(tempNowCheck > rampTemp[rampNowCheck] && digitalRead(RESISTANCE_PORT) == LOW) {
 
   if(tempNowCheck >= rampTemp[rampNowCheck] + tempOffsetOff) {    
-    resistance_power_now = 0;
+    resistance_power_now = LOW;
     Serial.println("resistance_power_now = " + String(resistance_power_now));
-    analogWrite(panela_port, resistance_power_now);
+    digitalWrite(RESISTANCE_PORT, resistance_power_now);
     
   } else if(tempNowCheck < rampTemp[rampNowCheck] + tempOffsetOn) {
 
@@ -430,23 +439,23 @@ void setPanelaOnOff(float tempNowCheck, int rampNowCheck) {
     Serial.println(" Res init     = " + String(resistance_init_seconds));
 
 
-    if (resistance_power_now > 0 && resistance_off_seconds > 0 && ((float) millis() / 1000.0) - resistance_init_seconds  > resistance_on_seconds) {
-      resistance_power_now = 0;
+    if (resistance_power_now == HIGH && resistance_off_seconds > 0 && ((float) millis() / 1000.0) - resistance_init_seconds  > resistance_on_seconds) {
+      resistance_power_now = LOW;
       Serial.println("resistance_power_now 1 = " + String(resistance_power_now));
-      analogWrite(panela_port, resistance_power_now);
+      digitalWrite(RESISTANCE_PORT, resistance_power_now);
       resistance_init_seconds = ((float) millis() / 1000.0);
       Serial.println(" Res init     = " + String(resistance_init_seconds));
-    } else if (resistance_power_now == 0 && resistance_on_seconds > 0 && ((float) millis() / 1000.0) - resistance_init_seconds > resistance_off_seconds) {
+    } else if (resistance_power_now == LOW && resistance_on_seconds > 0 && ((float) millis() / 1000.0) - resistance_init_seconds > resistance_off_seconds) {
       Serial.println("resistance_power_now 2 = " + String(resistance_power_now));
-      resistance_power_now = 1.0;
-      analogWrite(panela_port, resistance_power_now *255);
+      resistance_power_now = HIGH;
+      digitalWrite(RESISTANCE_PORT, resistance_power_now);
       resistance_init_seconds = ((float) millis() / 1000.0);
       Serial.println(" Res init     = " + String(resistance_init_seconds));
     }
 
     
 //    resistance_power = resistance_power_max;
-//    analogWrite(panela_port, resistance_power * 255);
+//    digitalWrite(RESISTANCE_PORT, resistance_power * 255);
     
     // utilizando potenciometro
     //    resistance_power = analogRead(potentiometer_port);
@@ -487,7 +496,27 @@ String menuSelect(String menu[], int menuSize) {
 
 
 bool pressed(int butt) {
-  return digitalRead(butt) == HIGH;
+
+  int valButtons = analogRead(pinButtons);
+
+  if ((valButtons < 800) && (valButtons >= 600)) { // SELECT
+     return butt == buttOk;
+     
+  } else if ((valButtons < 600) && (valButtons >= 400)) { // LEFT
+     return butt == buttCancel;
+     
+  } else if ((valButtons < 400) && (valButtons >= 200)) { // UP
+     return butt == buttSub;
+     
+  } else if ((valButtons < 200) && (valButtons >= 60)) { // DOWN
+     return butt == buttAdd;
+     
+//  } else if  (valButtons < 60) { // RIGHT
+//     estadoBotao(btRIGHT);
+     
+  } else {
+     return false;
+  }
 }
 
 
