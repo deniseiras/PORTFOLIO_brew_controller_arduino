@@ -25,6 +25,7 @@ TODO
 */
 
 
+
 //================= Libraries ========================
 
 #include <OneWire.h>
@@ -35,16 +36,16 @@ TODO
 //================= Port / Wire Config ========================
 
 // A0 - output - All buttons of keypad shield
-// D8-12 - input - used by the Keypad Shield
+// D4-09 - used by the Keypad Shield
 
 // temperature sensor DS18B20 - yellow wire
-#define TEMP_SENSOR 1
+#define TEMP_SENSOR 13
 
 // RESISTANCE_PORT - orange wire
-#define RESISTANCE_PORT 3
+#define RESISTANCE_PORT 2
 
 // PUMP_PORT - blue wire - NOT USED YET
-//#define PUMP_PORT 7
+//#define PUMP_PORT 1
 
 
 // ================== System variables ==================
@@ -93,7 +94,7 @@ int secondsRamp;
 int secondsInitRamp;
 int secondsPrint, minutesPrint, hoursPrint;
 float resistance_power = 0.8;
-float resistance_power_now = 0;
+float resistance_power_now = LOW;
 float resistance_on_seconds;
 float resistance_init_seconds;
 
@@ -145,7 +146,7 @@ void setup() {
 //  digitalWrite(PUMP_PORT, HIGH); //Desliga bomba
   
   pinMode(RESISTANCE_PORT, OUTPUT);
-  analogWrite(RESISTANCE_PORT, 0); //Desliga rele
+  digitalWrite(RESISTANCE_PORT, LOW); //Desliga rele
 
   // set up the LCD's number of columns and rows:
   lcd.begin(16, 2);
@@ -260,9 +261,9 @@ void loop() {
             dtostrf(tempNow, 2, 1, tempChar);
             dtostrf(rampTemp[rampNow], 2, 0, tempChar2);
             dtostrf(resistance_power * 100, 2, 0, tempChar3);
-            tempChar4 = resistance_power_now == 0 ? ' ' : '*';
+            tempChar4 = resistance_power_now == LOW ? ' ' : '*';
            
-//            if (resistance_power_now==0) {
+//            if (resistance_power_now==LOW) {
 //              tempChar4 = '*';
 //            } else {
 //              tempChar4 = ' ';
@@ -295,7 +296,7 @@ void loop() {
             dtostrf(tempNow, 2, 1, tempChar);
             dtostrf(rampTemp[rampNow], 2, 0, tempChar2);
             dtostrf(resistance_power * 100, 2, 0, tempChar3);
-            tempChar4 = resistance_power_now == 0 ? ' ' : '*';
+            tempChar4 = resistance_power_now == LOW ? ' ' : '*';
  
             print_out("Ok fervura?" + String(rampNow), 0); 
 
@@ -324,7 +325,7 @@ void loop() {
           setPanelaOnOff(tempNow, rampNow);
           dtostrf(tempNow, 2, 1, tempChar);
           dtostrf(resistance_power * 100, 2, 0, tempChar3);
-          tempChar4 = resistance_power_now == 0 ? ' ' : '*';
+          tempChar4 = resistance_power_now == LOW ? ' ' : '*';
 
           secondsRamp = (int) ((float) millis() / 1000.0) - secondsInitRamp;
           hoursPrint = (int) ((float) secondsRamp / 3600.0);
@@ -357,7 +358,7 @@ void loop() {
         print_del("Tempo atingido!", 1);
         rampNow++;
       }
-      analogWrite(RESISTANCE_PORT, 0);  //DesLiga rele
+      digitalWrite(RESISTANCE_PORT, LOW);  //DesLiga rele
     }
     programPhase = "*";
 
@@ -425,9 +426,9 @@ void setPanelaOnOff(float tempNowCheck, int rampNowCheck) {
 //  if(tempNowCheck > rampTemp[rampNowCheck] && digitalRead(RESISTANCE_PORT) == LOW) {
 
   if(tempNowCheck >= rampTemp[rampNowCheck] + tempOffsetOff) {    
-    resistance_power_now = 0;
+    resistance_power_now = LOW;
     Serial.println("resistance_power_now = " + String(resistance_power_now));
-    analogWrite(RESISTANCE_PORT, resistance_power_now);
+    digitalWrite(RESISTANCE_PORT, resistance_power_now);
     
   } else if(tempNowCheck < rampTemp[rampNowCheck] + tempOffsetOn) {
 
@@ -438,23 +439,23 @@ void setPanelaOnOff(float tempNowCheck, int rampNowCheck) {
     Serial.println(" Res init     = " + String(resistance_init_seconds));
 
 
-    if (resistance_power_now > 0 && resistance_off_seconds > 0 && ((float) millis() / 1000.0) - resistance_init_seconds  > resistance_on_seconds) {
-      resistance_power_now = 0;
+    if (resistance_power_now == HIGH && resistance_off_seconds > 0 && ((float) millis() / 1000.0) - resistance_init_seconds  > resistance_on_seconds) {
+      resistance_power_now = LOW;
       Serial.println("resistance_power_now 1 = " + String(resistance_power_now));
-      analogWrite(RESISTANCE_PORT, resistance_power_now);
+      digitalWrite(RESISTANCE_PORT, resistance_power_now);
       resistance_init_seconds = ((float) millis() / 1000.0);
       Serial.println(" Res init     = " + String(resistance_init_seconds));
-    } else if (resistance_power_now == 0 && resistance_on_seconds > 0 && ((float) millis() / 1000.0) - resistance_init_seconds > resistance_off_seconds) {
+    } else if (resistance_power_now == LOW && resistance_on_seconds > 0 && ((float) millis() / 1000.0) - resistance_init_seconds > resistance_off_seconds) {
       Serial.println("resistance_power_now 2 = " + String(resistance_power_now));
-      resistance_power_now = 1.0;
-      analogWrite(RESISTANCE_PORT, resistance_power_now *255);
+      resistance_power_now = HIGH;
+      digitalWrite(RESISTANCE_PORT, resistance_power_now);
       resistance_init_seconds = ((float) millis() / 1000.0);
       Serial.println(" Res init     = " + String(resistance_init_seconds));
     }
 
     
 //    resistance_power = resistance_power_max;
-//    analogWrite(RESISTANCE_PORT, resistance_power * 255);
+//    digitalWrite(RESISTANCE_PORT, resistance_power * 255);
     
     // utilizando potenciometro
     //    resistance_power = analogRead(potentiometer_port);
