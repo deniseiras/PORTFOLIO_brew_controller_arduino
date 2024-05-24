@@ -1,7 +1,9 @@
 # brew_controller_arduino
-Brew controller for arduino
-
 Arduino software to control the mash temperature and time.
+
+Author: Denis M. A. Eiras
+
+contact: denis.eiras@gmail.com
 
 Features:
 - Configure your mash ramps, temperature and time
