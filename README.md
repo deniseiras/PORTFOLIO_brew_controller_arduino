@@ -14,6 +14,7 @@ Features:
 - Use the temperature sensor when transfering mash
 
 ToDo:
+- Fix bug power on/off. The time off is not correct, during 2 cycles.
 - Adding hops or other ingredients configuration and alerts when mashing
 - Fix enable/disable backlight
 
